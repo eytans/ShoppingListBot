@@ -190,6 +190,7 @@ def handleMessage(chat_id, message):
     if message is None:
         return
     text = message.text
+    text = text.replace('@eytans_shopping_bot', '')
     if message.reply_to_message:
         text = getReplyBeginingByText(message.reply_to_message.text) + text
     if text.startswith('/help'):
