@@ -74,27 +74,10 @@ def getlist(chat_id):
 def updatelist(chat_id, new_list):
     global shoppingLists
     new_list = [item.strip() for item in new_list]
-    if len(new_list) == 0:
-            if os.path.exists(getlistpath(chat_id)):
-                os.remove(getlistpath(chat_id))
-    old_list = getlist(chat_id)
-    append = True
-    if len(new_list) < len(old_list):
-        append = False
-    elif len(old_list) <= len(new_list):
-        for i in range(len(old_list)):
-            if old_list[i] != new_list[i]:
-                append = False
-                break
-    if not append:
-        result = [line+'\n' for line in new_list]
-        with open(getlistpath(chat_id), 'w') as list_file:
-            list_file.writelines(result)
-    elif len(old_list) != len(new_list):
-        to_append = [line+'\n' for line in new_list[len(old_list):]]
-        with open(getlistpath(chat_id), 'a') as list_file:
-            list_file.writelines(to_append)
     shoppingLists[chat_id] = new_list
+    with open(getlistpath(chat_id), 'w') as list_file:
+        for item in new_list:
+            list_file.write(item + os.linesep)
 
 
 # returns the answer string
