@@ -1,0 +1,1 @@
+This bot lets you maintaine a shopping list. You can have a list in your group with your family or roomates :)

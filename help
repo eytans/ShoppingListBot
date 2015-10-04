@@ -1,0 +1,7 @@
+/add - add an item to the list. (second usage /add <item>)
+/showlist - well... if you didnt get it just try it
+/remove - remove an item from list. (second usage /remove <item>)
+/clear - remove all items from list.
+/edit - your next message will be the new list. (try copy paste)
+/settings - is list ordered alphabetically or by insertion order.
+/help - print all commands and usage
