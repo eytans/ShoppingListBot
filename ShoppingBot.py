@@ -190,14 +190,15 @@ def handleMessage(chat_id, message):
     if message is None:
         return
     text = message.text
-    text = text.replace('@eytans_shopping_bot', '')
     if message.reply_to_message:
         text = getReplyBeginingByText(message.reply_to_message.text) + text
     if text.startswith('/help'):
         force_reply, reply = helpresult(text)
     elif text.startswith('/add'):
+        text = text.replace('/add@eytans_shopping_bot', '/add')
         force_reply, reply = addresult(text, chat_id)
     elif text.startswith('/remove'):
+        text = text.replace('/remove@eytans_shopping_bot', '/remove')
         force_reply, reply = removeresult(text, chat_id)
     elif text.startswith('/showlist'):
         force_reply, reply = showlistresult(text, chat_id)
@@ -214,7 +215,7 @@ def handleMessage(chat_id, message):
 
     force = None
     if force_reply:
-        force = telegram.ForceReply()
+        force = telegram.ForceReply(selective=True)
     reply_to = message.message_id
     if len(reply) == 0:
         return
