@@ -26,6 +26,8 @@ LAST_UPDATE_KEY = 'last_update'
 SORT_LIST_KEY = 'sort_list'
 
 LIST_MAX_SIZE = 300
+ITEM_MAX_SIZE = 100
+BACKUP_LIST_NAME = 'list.bak'
 
 helpText = None
 shoppingLists = {}
@@ -73,17 +75,18 @@ def getlist(chat_id, list_name=None):
         return []
     with open(list_path, 'r') as list_file:
         list_lines = list_file.readlines()
-    list_lines = [line.strip() for line in list_lines]
+    list_lines = [line.replace(os.linesep, '').replace('\r', '').replace('\n', '').strip() for line in list_lines]
     return list_lines
 
 
 def updatelist(chat_id, new_list):
     global shoppingLists
-    new_list = [item.strip() for item in new_list]
+    new_list = [item.replace(os.linesep, '').replace('\r', '').replace('\n', '').strip() for item in new_list]
+    new_list = [item for item in new_list if item != '']
     shoppingLists[chat_id] = new_list
     with open(getlistpath(chat_id), 'w') as list_file:
         for item in new_list:
-            list_file.write(item + os.linesep)
+            list_file.write(item + '\n')
 
 
 # returns the answer string
@@ -111,13 +114,22 @@ def addresult(text, chat_id):
     if not text.startswith('/add'):
         return False, ''
     items = getitems(text, '/add')
+    orig_items_len = len(items)
     if len(items) == 0:
         return True, ADD_RESPONSE
     current = getlist(chat_id)
     if (len(current) + len(items)) > LIST_MAX_SIZE:
         items = items[(len(items) - (LIST_MAX_SIZE - len(current))):]
+    reply = 'added ' + str(len(items)) + ' items.'
+    if orig_items_len > len(items):
+        reply += ' as list reached max size (300 items).'
+    for item in items:
+        if len(item) > ITEM_MAX_SIZE:
+            reply = reply + ' some items were shortened. (max item size = ' + str(ITEM_MAX_SIZE) + ')'
+            break
+    items = [item[:100] for item in items]
     updatelist(chat_id, current + items)
-    return False, 'added ' + str(len(items)) + ' items'
+    return False, reply
 
 
 def removeresult(text, chat_id):
@@ -150,10 +162,10 @@ def showlistresult(text, chat_id):
         names = []
         dic = {}
         for name in result:
-            key = name.translate(None, digits).strip()
+            key = ''.join([i for i in name if not i.isdigit()]).strip()
             if key not in dic:
                 dic[key] = []
-            names.append(key)
+                names.append(key)
             dic[key].append(name)
         names.sort()
         result = []
@@ -212,14 +224,20 @@ def handleMessage(chat_id, message):
     elif text.startswith('/add'):
         text = text.replace('/add@eytans_shopping_bot', '/add')
         force_reply, reply = addresult(text, chat_id)
+        if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
+            os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
     elif text.startswith('/remove'):
         text = text.replace('/remove@eytans_shopping_bot', '/remove')
         force_reply, reply = removeresult(text, chat_id)
+        if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
+            os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
     elif text.startswith('/showlist'):
         force_reply, reply = showlistresult(text, chat_id)
     elif text.startswith('/settings'):
         force_reply, reply = settingsresult(text, chat_id)
     elif text.startswith('/clear'):
+        if os.path.exists(getlistpath(chat_id)):
+            shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
         force_reply, reply = clearsresult(text, chat_id)
     elif text.startswith('/edit'):
         text = '/showlist'
@@ -228,15 +246,26 @@ def handleMessage(chat_id, message):
         force_reply = True
     elif text.startswith('editreply'):
         new_list = getitems(text, 'editreply')
-        shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, 'list.bak'))
+        if os.path.exists(getlistpath(chat_id)):
+            shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
+        reply = 'ok'
+        if len(new_list) > LIST_MAX_SIZE:
+            new_list = new_list[:LIST_MAX_SIZE]
+            reply = 'list too long. added only the ' + str(LIST_MAX_SIZE) + ' first items.'
+        for item in new_list:
+            if len(item) > ITEM_MAX_SIZE:
+                reply = reply + ' some items were shortened. (max item size = ' + str(ITEM_MAX_SIZE) + ')'
+                break
+        new_list = [item[:100] for item in new_list]
         updatelist(chat_id, new_list)
+        force_reply = False
     elif text.startswith('/undoedit'):
-        if not os.path.exists(getlistpath(chat_id, 'list.bak')):
+        if not os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             force_reply = False
             reply = 'Sorry, i dont have a backup. if you didnt edit or used add/remove i wouldnt have one..'
         else:
-            shutil.copy2(getlistpath(chat_id, 'list.bak'), getlistpath(chat_id))
-            os.remove(getlistpath(chat_id, 'list.bak'))
+            shutil.copy2(getlistpath(chat_id, BACKUP_LIST_NAME), getlistpath(chat_id))
+            os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
             force_reply = False
             reply = 'ok'
             del shoppingLists[chat_id]
