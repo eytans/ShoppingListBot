@@ -20,6 +20,7 @@ HELP = 'help'
 ADD_RESPONSE = 'What item do you want to add to the list?'
 REMOVE_RESPONSE = 'What item do you want to remove from the list?'
 SETTINGS_RESPONSE = 'Do you want to sort the list alphabetically or by insertion order? <a = alphabetically, i = insertion>'
+EDIT_RESPONSE = 'Please send the list after editing it in your next message. (you can find current list above)'
 
 SHOPPING_BOT_TOKEN_KEY = 'token_key'
 LAST_UPDATE_KEY = 'last_update'
@@ -50,7 +51,7 @@ def updateData(data_path, data):
     if not os.path.exists(os.path.abspath(os.path.join(data_path, os.pardir))):
         os.mkdirs(os.path.abspath(os.path.join(data_path, os.pardir)))
     with open(data_path, 'w') as data_file:
-        for key, val in data.iteritems():
+        for key, val in data.items():
             data_file.write(str(key) + '=' + str(val) + '\n')
 
 
@@ -206,7 +207,7 @@ def getReplyBeginingByText(text):
         return '/remove '
     elif text == SETTINGS_RESPONSE:
         return '/settings '
-    elif text.startswith('Please send the list after editing it in your next message.\n Current list:\n'):
+    elif text.startswith(EDIT_RESPONSE):
         return 'editreply'
     else:
         return ''
@@ -242,7 +243,12 @@ def handleMessage(chat_id, message):
     elif text.startswith('/edit'):
         text = '/showlist'
         force_reply, reply = showlistresult(text, chat_id)
-        reply = 'Please send the list after editing it in your next message.\n Current list:\n' + reply
+        try:
+            bot.sendMessage(chat_id=chat_id, text=reply)
+        except:
+            print('error: cant send message')
+            raise 'send message error'
+        reply = EDIT_RESPONSE
         force_reply = True
     elif text.startswith('editreply'):
         new_list = getitems(text, 'editreply')
@@ -277,9 +283,10 @@ def handleMessage(chat_id, message):
         return
 
     force = None
+    reply_to = None
     if force_reply:
         force = telegram.ForceReply(selective=True)
-    reply_to = message.message_id
+        reply_to = message.message_id
     if len(reply) == 0:
         return
     try:
