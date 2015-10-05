@@ -4,6 +4,8 @@ import telegram
 import sys
 import os
 import time
+from string import digits
+import shutil
 
 if len(sys.argv) < 2:
     print("bad arguments. need working folder. exiting")
@@ -19,9 +21,11 @@ ADD_RESPONSE = 'What item do you want to add to the list?'
 REMOVE_RESPONSE = 'What item do you want to remove from the list?'
 SETTINGS_RESPONSE = 'Do you want to sort the list alphabetically or by insertion order? <a = alphabetically, i = insertion>'
 
-SHOPPING_BOT_TOKEN_KEY = 'token_key' #'107201836:AAGvnOCcaq-InDUdUr8tc8bAqQB5BUvdixo'
+SHOPPING_BOT_TOKEN_KEY = 'token_key'
 LAST_UPDATE_KEY = 'last_update'
 SORT_LIST_KEY = 'sort_list'
+
+LIST_MAX_SIZE = 300
 
 helpText = None
 shoppingLists = {}
@@ -52,17 +56,19 @@ def getsettingspath(chat_id):
     return getlistpath(chat_id).replace('list', 'settings')
 
 
-def getlistpath(chat_id):
+def getlistpath(chat_id, list_name=None):
     if not os.path.exists(str(chat_id)):
         os.makedirs(str(chat_id))
-    return str(chat_id) + os.sep + 'list'
+    if list_name is None:
+        list_name = 'list'
+    return str(chat_id) + os.sep + list_name
 
 
-def getlist(chat_id):
+def getlist(chat_id, list_name=None):
     global shoppingLists
     if chat_id in shoppingLists:
         return shoppingLists[chat_id]
-    list_path = getlistpath(chat_id)
+    list_path = getlistpath(chat_id, list_name)
     if not os.path.exists(str(list_path)):
         return []
     with open(list_path, 'r') as list_file:
@@ -92,22 +98,33 @@ def helpresult(text):
         return False, ''
 
 
+def getitems(text, command):
+    items = text.replace(os.linesep, '\n').split('\n')
+    items = [items[0].replace(command, '')] + items[1:]
+    items = [item.strip() for item in items]
+    if items[0] == '':
+        items = items[1:]
+    return items
+
+
 def addresult(text, chat_id):
     if not text.startswith('/add'):
         return False, ''
-    items = text.replace(os.linesep, '\n').split('\n')
-    if (len(items) == 1) and (len(items[0].split()) == 1):
+    items = getitems(text, '/add')
+    if len(items) == 0:
         return True, ADD_RESPONSE
-    items = [item.replace('/add', '') for item in items]
-    updatelist(chat_id, getlist(chat_id) + items)
+    current = getlist(chat_id)
+    if (len(current) + len(items)) > LIST_MAX_SIZE:
+        items = items[(len(items) - (LIST_MAX_SIZE - len(current))):]
+    updatelist(chat_id, current + items)
     return False, 'added ' + str(len(items)) + ' items'
 
 
 def removeresult(text, chat_id):
     if not text.startswith('/remove'):
         return False, ''
-    items = text.replace('/remove', '').replace(os.linesep, '\n').split('\n')
-    if (len(items) == 0) or ((len(items) == 1) and (items[0].strip() == '')):
+    items = getitems(text, '/remove')
+    if len(items) == 0:
         return True, REMOVE_RESPONSE
     new_list = getlist(chat_id)
     count = 0
@@ -130,7 +147,19 @@ def showlistresult(text, chat_id):
         sort_list = bool(settings[SORT_LIST_KEY])
     result = getlist(chat_id)
     if sort_list:
-        result.sort()
+        names = []
+        dic = {}
+        for name in result:
+            key = name.translate(None, digits).strip()
+            if key not in dic:
+                dic[key] = []
+            names.append(key)
+            dic[key].append(name)
+        names.sort()
+        result = []
+        for key in names:
+            for name in dic[key]:
+                result.append(name)
     if len(result) == 0:
         return False, 'nothing to show'
     return False, '\n'.join(result)
@@ -165,11 +194,14 @@ def getReplyBeginingByText(text):
         return '/remove '
     elif text == SETTINGS_RESPONSE:
         return '/settings '
+    elif text.startswith('Please send the list after editing it in your next message.\n Current list:\n'):
+        return 'editreply'
     else:
         return ''
 
 
 def handleMessage(chat_id, message):
+    global shoppingLists
     if message is None:
         return
     text = message.text
@@ -189,6 +221,25 @@ def handleMessage(chat_id, message):
         force_reply, reply = settingsresult(text, chat_id)
     elif text.startswith('/clear'):
         force_reply, reply = clearsresult(text, chat_id)
+    elif text.startswith('/edit'):
+        text = '/showlist'
+        force_reply, reply = showlistresult(text, chat_id)
+        reply = 'Please send the list after editing it in your next message.\n Current list:\n' + reply
+        force_reply = True
+    elif text.startswith('editreply'):
+        new_list = getitems(text, 'editreply')
+        shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, 'list.bak'))
+        updatelist(chat_id, new_list)
+    elif text.startswith('/undoedit'):
+        if not os.path.exists(getlistpath(chat_id, 'list.bak')):
+            force_reply = False
+            reply = 'Sorry, i dont have a backup. if you didnt edit or used add/remove i wouldnt have one..'
+        else:
+            shutil.copy2(getlistpath(chat_id, 'list.bak'), getlistpath(chat_id))
+            os.remove(getlistpath(chat_id, 'list.bak'))
+            force_reply = False
+            reply = 'ok'
+            del shoppingLists[chat_id]
     else:
         force_reply, reply = False, ''
 
