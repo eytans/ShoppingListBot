@@ -3,5 +3,6 @@
 /remove - remove an item from list. (second usage /remove <item>)
 /clear - remove all items from list.
 /edit - your next message will be the new list. (try copy paste)
+/undoedit - undo last edit or clear. wont work after add/remove.
 /settings - is list ordered alphabetically or by insertion order.
 /help - print all commands and usage
