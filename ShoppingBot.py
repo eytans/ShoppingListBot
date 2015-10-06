@@ -4,8 +4,8 @@ import telegram
 import sys
 import os
 import time
-from string import digits
 import shutil
+import logging
 
 if len(sys.argv) < 2:
     print("bad arguments. need working folder. exiting")
@@ -16,11 +16,13 @@ os.chdir(workingDir)
 
 GENERAL_DATA = "main.data"
 HELP = 'help'
+ERROR_LOG = 'errors.log'
+error_log = logging.basicConfig(filename=ERROR_LOG, level=logging.ERROR)
 
 ADD_RESPONSE = 'What item do you want to add to the list?'
 REMOVE_RESPONSE = 'What item do you want to remove from the list?'
 SETTINGS_RESPONSE = 'Do you want to sort the list alphabetically or by insertion order? <a = alphabetically, i = insertion>'
-EDIT_RESPONSE = 'Please send the list after editing it in your next message. (you can find current list above)'
+EDIT_RESPONSE = 'Please send the new list after editing it in your next message. (you can find current list above). for example if the list is milk and tomatos send:\nmilk\ntoamtos'
 
 SHOPPING_BOT_TOKEN_KEY = 'token_key'
 LAST_UPDATE_KEY = 'last_update'
@@ -215,8 +217,12 @@ def getReplyBeginingByText(text):
 
 def handleMessage(chat_id, message):
     global shoppingLists
+    global error_log
     if message is None:
         return
+    # handle new group by printing hello and help.
+    if message.group_chat_created:
+        bot.sendMessage(chat_id=chat_id, text='Hi, im here to help you shop. if you want more info just write /help')
     text = message.text
     if message.reply_to_message:
         text = getReplyBeginingByText(message.reply_to_message.text) + text
@@ -246,7 +252,7 @@ def handleMessage(chat_id, message):
         try:
             bot.sendMessage(chat_id=chat_id, text=reply)
         except:
-            print('error: cant send message')
+            error_log.exception("Error!")
             raise 'send message error'
         reply = EDIT_RESPONSE
         force_reply = True
@@ -292,8 +298,7 @@ def handleMessage(chat_id, message):
     try:
         bot.sendMessage(chat_id=chat_id, text=reply, reply_to_message_id=reply_to, reply_markup=force)
     except:
-        print('error: cant send message')
-
+        error_log.exception("Error!")
 
 data = readData(GENERAL_DATA)
 last_update = 0
