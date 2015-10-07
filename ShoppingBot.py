@@ -366,6 +366,8 @@ while True:
             try:
                 # make sure not to send empty message
                 handleMessage(chat_id, update.message)
+            except:
+                print('error, handeling message failed')
             finally:
                 last_update = max(last_update, update.update_id)
         last_update += 1
