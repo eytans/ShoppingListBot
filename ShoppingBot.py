@@ -6,6 +6,7 @@ import os
 import time
 import shutil
 import logging
+import re
 
 if len(sys.argv) < 2:
     print("bad arguments. need working folder. exiting")
@@ -34,6 +35,7 @@ BACKUP_LIST_NAME = 'list.bak'
 
 helpText = None
 shoppingLists = {}
+force = telegram.ForceReply(selective=True)
 
 
 def readData(data_path):
@@ -92,34 +94,71 @@ def updatelist(chat_id, new_list):
             list_file.write(item + '\n')
 
 
-# returns the answer string
-def helpresult(text):
-    global helpText
-    if text.startswith('/help'):
-        if helpText is None:
-            with open(HELP, 'r') as helpFile:
-                helpText = "\n".join(helpFile.readlines())
-        return False, helpText
-    else:
-        return False, ''
+def sendmessage(chat_id, reply, reply_to=None, force=None):
+    if reply == '':
+        return
+    try:
+        bot.sendMessage(chat_id=chat_id, text=reply,  reply_to_message_id=reply_to, reply_markup=force)
+    except:
+        error_log.exception("Error!")
+        raise RuntimeError('send message error')
 
 
-def getitems(text, command):
+def getitems(text, command=None):
     items = text.replace(os.linesep, '\n').split('\n')
-    items = [items[0].replace(command, '')] + items[1:]
+    if command is not None:
+        items = [items[0].replace(command, '')] + items[1:]
     items = [item.strip() for item in items]
     if items[0] == '':
         items = items[1:]
     return items
 
 
-def addresult(text, chat_id):
-    if not text.startswith('/add'):
-        return False, ''
-    items = getitems(text, '/add')
+commands = None
+def getCommands():
+    global commands
+    global helpText
+    if commands is not None:
+        return commands
+
+    if helpText is None:
+        with open(HELP, 'r') as helpFile:
+            helpText = "\n".join(helpFile.readlines())
+    lines = helpText.splitlines()
+    res = []
+    for line in lines:
+        if '-' not in line:
+            continue
+        res.append(line.split('-')[0].strip())
+    commands = res
+    return res
+
+
+pattern = None
+def getcleanitems(items):
+    global pattern
+    commands = getCommands()
+    if pattern is None:
+        pattern = '|'.join(commands)
+    res = []
+    for item in items:
+        temp = re.sub(pattern, '', item).strip()
+        if temp != '':
+            res.append(temp)
+    return res
+
+
+# returns the answer string
+def handleHelp(text, chat_id, message_id):
+    global helpText
+    if helpText is None:
+        with open(HELP, 'r') as helpFile:
+            helpText = "\n".join(helpFile.readlines())
+    sendmessage(chat_id, helpText)
+
+
+def addItemsToList(chat_id, items):
     orig_items_len = len(items)
-    if len(items) == 0:
-        return True, ADD_RESPONSE
     current = getlist(chat_id)
     if (len(current) + len(items)) > LIST_MAX_SIZE:
         items = items[(len(items) - (LIST_MAX_SIZE - len(current))):]
@@ -132,15 +171,24 @@ def addresult(text, chat_id):
             break
     items = [item[:100] for item in items]
     updatelist(chat_id, current + items)
-    return False, reply
+    sendmessage(chat_id, reply)
 
 
-def removeresult(text, chat_id):
-    if not text.startswith('/remove'):
-        return False, ''
-    items = getitems(text, '/remove')
-    if len(items) == 0:
-        return True, REMOVE_RESPONSE
+def handleAdd(text, chat_id, message_id):
+    global force
+    items = getcleanitems(getitems(text, '/add'))
+    if len(getitems(text, '/add')) == 0:
+        sendmessage(chat_id, ADD_RESPONSE, message_id, force)
+        return
+    addItemsToList(chat_id, items)
+
+
+def handleAddResponse(text, chat_id, message_id):
+    items = getcleanitems(getitems(text, '/add'))
+    addItemsToList(chat_id, items)
+
+
+def removeItemsFromList(items, chat_id):
     new_list = getlist(chat_id)
     count = 0
     for item in items:
@@ -149,12 +197,25 @@ def removeresult(text, chat_id):
             new_list.remove(item)
             count += 1
     updatelist(chat_id, new_list)
-    return False, 'removed ' + str(count) + ' items'
+    sendmessage(chat_id, 'removed ' + str(count) + ' items')
 
 
-def showlistresult(text, chat_id):
-    if not text.startswith('/showlist'):
-        return False, ''
+def handleRemove(text, chat_id, message_id):
+    global force
+    items = getitems(text, '/remove')
+    if len(items) == 0:
+        sendmessage(chat_id, REMOVE_RESPONSE, message_id, force)
+        return
+    removeItemsFromList(items, chat_id)
+
+
+def handleRemoveResponse(text, chat_id, message_id):
+    global force
+    items = getitems(text, '/remove')
+    removeItemsFromList(items, chat_id)
+
+
+def handleShowlist(text, chat_id, message_id):
     settings_path = getsettingspath(chat_id)
     settings = readData(settings_path)
     sort_list = True
@@ -175,31 +236,28 @@ def showlistresult(text, chat_id):
         for key in names:
             for name in dic[key]:
                 result.append(name)
+    reply = '\n'.join(result)
     if len(result) == 0:
-        return False, 'nothing to show'
-    return False, '\n'.join(result)
+        reply = 'nothing to show'
+    sendmessage(chat_id, reply)
 
 
-def settingsresult(text, chat_id):
-    if not text.startswith('/settings'):
-        return False, ''
-    if len(text.split()) == 1:
-        return True, SETTINGS_RESPONSE
-    order = text.split()[1]
-    if order != 'a' and order != 'i':
-        return True, SETTINGS_RESPONSE
+def handleSettings(text, chat_id, message_id):
+    global force
+    if (len(text.split()) == 1) or ((text.split()[1] != 'a') and (text.split()[1] != 'i')):
+        sendmessage(chat_id, SETTINGS_RESPONSE, message_id, force)
+        return
+    order = text.split()[1] # note that i use this expression in if
     settings_path = getsettingspath(chat_id)
     settings = {}
     settings[SORT_LIST_KEY] = (order == 'a')
     updateData(settings_path, settings)
-    return False, 'ok'
+    sendmessage(chat_id, 'ok')
 
 
-def clearsresult(text, chat_id):
-    if not text.startswith('/clear'):
-        return False, ''
+def handleClear(text, chat_id, message_id):
     updatelist(chat_id, [])
-    return False, 'ok'
+    sendmessage(chat_id, 'ok')
 
 
 def getReplyBeginingByText(text):
@@ -218,46 +276,26 @@ def getReplyBeginingByText(text):
 def handleMessage(chat_id, message):
     global shoppingLists
     global error_log
+    global force
     if message is None:
         return
+    message_id = message.message_id
     # handle new group by printing hello and help.
-    if message.group_chat_created:
-        bot.sendMessage(chat_id=chat_id, text='Hi, im here to help you shop. if you want more info just write /help')
     text = message.text
-    if message.reply_to_message:
-        text = getReplyBeginingByText(message.reply_to_message.text) + text
-    if text.startswith('/help'):
-        force_reply, reply = helpresult(text)
-    elif text.startswith('/add'):
-        text = text.replace('/add@eytans_shopping_bot', '/add')
-        force_reply, reply = addresult(text, chat_id)
+    if message.group_chat_created:
+        sendmessage(chat_id, 'Hi, im here to help you shop. if you want more info just write /help')
+    if message.reply_to_message and message.reply_to_message.text.startswith(ADD_RESPONSE):
+        handleAddResponse(text, chat_id, message_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
-    elif text.startswith('/remove'):
-        text = text.replace('/remove@eytans_shopping_bot', '/remove')
-        force_reply, reply = removeresult(text, chat_id)
+    elif message.reply_to_message and message.reply_to_message.text.startswith(REMOVE_RESPONSE):
+        handleRemoveResponse(text, chat_id, message_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
-    elif text.startswith('/showlist'):
-        force_reply, reply = showlistresult(text, chat_id)
-    elif text.startswith('/settings'):
-        force_reply, reply = settingsresult(text, chat_id)
-    elif text.startswith('/clear'):
-        if os.path.exists(getlistpath(chat_id)):
-            shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
-        force_reply, reply = clearsresult(text, chat_id)
-    elif text.startswith('/edit'):
-        text = '/showlist'
-        force_reply, reply = showlistresult(text, chat_id)
-        try:
-            bot.sendMessage(chat_id=chat_id, text=reply)
-        except:
-            error_log.exception("Error!")
-            raise 'send message error'
-        reply = EDIT_RESPONSE
-        force_reply = True
-    elif text.startswith('editreply'):
-        new_list = getitems(text, 'editreply')
+    elif message.reply_to_message and message.reply_to_message.text.startswith(SETTINGS_RESPONSE):
+        handleSettings(text, chat_id, message_id)
+    elif message.reply_to_message and message.reply_to_message.text.startswith(EDIT_RESPONSE):
+        new_list = getcleanitems(getitems(text, None))
         if os.path.exists(getlistpath(chat_id)):
             shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
         reply = 'ok'
@@ -270,35 +308,40 @@ def handleMessage(chat_id, message):
                 break
         new_list = [item[:100] for item in new_list]
         updatelist(chat_id, new_list)
-        force_reply = False
+        sendmessage(chat_id, reply)
+    elif text.startswith('/help'):
+        handleHelp(text, chat_id, message_id)
+    elif text.startswith('/add'):
+        text = text.replace('/add@eytans_shopping_bot', '/add')
+        handleAdd(text, chat_id, message_id)
+        if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
+            os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
+    elif text.startswith('/remove'):
+        text = text.replace('/remove@eytans_shopping_bot', '/remove')
+        handleRemove(text, chat_id, message_id)
+        if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
+            os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
+    elif text.startswith('/showlist'):
+        handleShowlist(text, chat_id, message_id)
+    elif text.startswith('/settings'):
+        handleSettings(text, chat_id, message_id)
+    elif text.startswith('/clear'):
+        if os.path.exists(getlistpath(chat_id)):
+            shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
+        handleClear(text, chat_id, message_id)
+    elif text.startswith('/edit'):
+        text = '/showlist'
+        handleShowlist(text, chat_id, message_id)
+        sendmessage(chat_id, EDIT_RESPONSE, message_id, force)
     elif text.startswith('/undoedit'):
         if not os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
-            force_reply = False
-            reply = 'Sorry, i dont have a backup. if you didnt edit or used add/remove i wouldnt have one..'
+            sendmessage(chat_id, 'Sorry, i dont have a backup. if you didnt edit or used add/remove i wouldnt have one..')
         else:
             shutil.copy2(getlistpath(chat_id, BACKUP_LIST_NAME), getlistpath(chat_id))
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
-            force_reply = False
-            reply = 'ok'
             del shoppingLists[chat_id]
-    else:
-        force_reply, reply = False, ''
+            sendmessage(chat_id, 'ok')
 
-    if force_reply and len(reply) == 0:
-        print('error: bad parmaeters for: ' + message.text)
-        return
-
-    force = None
-    reply_to = None
-    if force_reply:
-        force = telegram.ForceReply(selective=True)
-        reply_to = message.message_id
-    if len(reply) == 0:
-        return
-    try:
-        bot.sendMessage(chat_id=chat_id, text=reply, reply_to_message_id=reply_to, reply_markup=force)
-    except:
-        error_log.exception("Error!")
 
 data = readData(GENERAL_DATA)
 last_update = 0
@@ -327,3 +370,4 @@ while True:
         last_update += 1
         updates = bot.getUpdates(offset=(last_update))
     time.sleep(1)
+
