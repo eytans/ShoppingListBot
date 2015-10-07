@@ -100,7 +100,8 @@ def sendmessage(chat_id, reply, reply_to=None, force=None):
     try:
         bot.sendMessage(chat_id=chat_id, text=reply,  reply_to_message_id=reply_to, reply_markup=force)
     except:
-        error_log.exception("Error!")
+        if error_log is not None:
+            error_log.exception("Error!")
         raise RuntimeError('send message error')
 
 
