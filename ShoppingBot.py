@@ -360,7 +360,8 @@ bot = telegram.Bot(token=shopping_bot_token)
 # like do while
 while True:
     try:
-        updates = bot.getUpdates(offset=last_update, limit=1, timeout=500)
+        print(last_update)
+        updates = bot.getUpdates(offset=last_update, limit=1)
     except:
         last_update += 1
         exeption_string = traceback.format_exc()
@@ -381,7 +382,8 @@ while True:
                 last_update = max(last_update, update.update_id)
         last_update += 1
         try:
-            updates = bot.getUpdates(offset=last_update, limit=1, timeout=500)
+            print(last_update)
+            updates = bot.getUpdates(offset=last_update, limit=1)
         except:
             last_update += 1
             exeption_string = traceback.format_exc()
