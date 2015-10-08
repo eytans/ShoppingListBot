@@ -357,7 +357,11 @@ bot = telegram.Bot(token=shopping_bot_token)
 
 # like do while
 while True:
-    updates = bot.getUpdates(offset=(last_update))
+    try:
+        updates = bot.getUpdates(offset=(last_update))
+    except:
+        last_update += 1
+        continue
     while len(updates) > 0:
         last_update = 0
         for update in updates:
