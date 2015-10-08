@@ -7,6 +7,7 @@ import time
 import shutil
 import logging
 import re
+import traceback
 
 if len(sys.argv) < 2:
     print("bad arguments. need working folder. exiting")
@@ -100,6 +101,7 @@ def sendmessage(chat_id, reply, reply_to=None, force=None):
     try:
         bot.sendMessage(chat_id=chat_id, text=reply,  reply_to_message_id=reply_to, reply_markup=force)
     except:
+        print(traceback.format_exc())
         if error_log is not None:
             error_log.exception("Error!")
         raise RuntimeError('send message error')
@@ -358,9 +360,11 @@ bot = telegram.Bot(token=shopping_bot_token)
 # like do while
 while True:
     try:
-        updates = bot.getUpdates(offset=(last_update))
+        updates = bot.getUpdates(offset=last_update, limit=1, timeout=500)
     except:
         last_update += 1
+        exeption_string = traceback.format_exc()
+        print(exeption_string)
         continue
     while len(updates) > 0:
         last_update = 0
@@ -372,9 +376,16 @@ while True:
                 handleMessage(chat_id, update.message)
             except:
                 print('error, handeling message failed')
+                print(traceback.format_exc())
             finally:
                 last_update = max(last_update, update.update_id)
         last_update += 1
-        updates = bot.getUpdates(offset=(last_update))
+        try:
+            updates = bot.getUpdates(offset=last_update, limit=1, timeout=500)
+        except:
+            last_update += 1
+            exeption_string = traceback.format_exc()
+            print(exeption_string)
+            continue
     time.sleep(1)
 
