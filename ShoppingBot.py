@@ -367,7 +367,6 @@ while True:
         print(exeption_string)
         continue
     while len(updates) > 0:
-        last_update = 0
         for update in updates:
             # finish handeling the update by raising the last update then send message
             chat_id = update.message.chat_id
@@ -383,7 +382,7 @@ while True:
         try:
             updates = bot.getUpdates(offset=last_update, limit=1, timeout=500)
         except:
-            last_update += 1
+            updates = []
             exeption_string = traceback.format_exc()
             print(exeption_string)
             continue
