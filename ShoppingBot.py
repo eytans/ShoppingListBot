@@ -1,6 +1,6 @@
 __author__ = 'eytan'
 
-import telegram
+import telepot
 import sys
 import os
 import time
@@ -36,8 +36,7 @@ BACKUP_LIST_NAME = 'list.bak'
 
 helpText = None
 shoppingLists = {}
-force = telegram.ForceReply(selective=True)
-
+force = {'force_reply': True}
 
 def readData(data_path):
     data = {}
@@ -276,28 +275,32 @@ def getReplyBeginingByText(text):
         return ''
 
 
-def handleMessage(chat_id, message):
+def handleMessage(msg):
     global shoppingLists
     global error_log
     global force
-    if message is None:
+    if msg is None:
         return
-    message_id = message.message_id
+    msg_id = msg['message_id']
+    content_type, chat_type, chat_id = telepot.glance(msg)
     # handle new group by printing hello and help.
-    text = message.text
-    if message.group_chat_created:
+    text = msg['text']
+    is_reply = 'reply_to_message' in msg
+    if is_reply:
+        reply_text = msg['reply_to_message']['text']
+    if 'group_chat_created' in msg and msg['group_chat_created'] == 'True':
         sendmessage(chat_id, 'Hi, im here to help you shop. if you want more info just write /help')
-    if message.reply_to_message and message.reply_to_message.text.startswith(ADD_RESPONSE):
-        handleAddResponse(text, chat_id, message_id)
+    if is_reply and reply_text.startswith(ADD_RESPONSE):
+        handleAddResponse(text, chat_id, msg_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
-    elif message.reply_to_message and message.reply_to_message.text.startswith(REMOVE_RESPONSE):
-        handleRemoveResponse(text, chat_id, message_id)
+    elif is_reply and reply_text.startswith(REMOVE_RESPONSE):
+        handleRemoveResponse(text, chat_id, msg_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
-    elif message.reply_to_message and message.reply_to_message.text.startswith(SETTINGS_RESPONSE):
-        handleSettings(text, chat_id, message_id)
-    elif message.reply_to_message and message.reply_to_message.text.startswith(EDIT_RESPONSE):
+    elif is_reply and reply_text.startswith(SETTINGS_RESPONSE):
+        handleSettings(text, chat_id, msg_id)
+    elif is_reply and reply_text.startswith(EDIT_RESPONSE):
         new_list = getcleanitems(getitems(text, None))
         if os.path.exists(getlistpath(chat_id)):
             shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
@@ -313,29 +316,29 @@ def handleMessage(chat_id, message):
         updatelist(chat_id, new_list)
         sendmessage(chat_id, reply)
     elif text.startswith('/help'):
-        handleHelp(text, chat_id, message_id)
+        handleHelp(text, chat_id, msg_id)
     elif text.startswith('/add'):
         text = text.replace('/add@eytans_shopping_bot', '/add')
-        handleAdd(text, chat_id, message_id)
+        handleAdd(text, chat_id, msg_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
     elif text.startswith('/remove'):
         text = text.replace('/remove@eytans_shopping_bot', '/remove')
-        handleRemove(text, chat_id, message_id)
+        handleRemove(text, chat_id, msg_id)
         if os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             os.remove(getlistpath(chat_id, BACKUP_LIST_NAME))
     elif text.startswith('/showlist'):
-        handleShowlist(text, chat_id, message_id)
+        handleShowlist(text, chat_id, msg_id)
     elif text.startswith('/settings'):
-        handleSettings(text, chat_id, message_id)
+        handleSettings(text, chat_id, msg_id)
     elif text.startswith('/clear'):
         if os.path.exists(getlistpath(chat_id)):
             shutil.copy2(getlistpath(chat_id), getlistpath(chat_id, BACKUP_LIST_NAME))
-        handleClear(text, chat_id, message_id)
+        handleClear(text, chat_id, msg_id)
     elif text.startswith('/edit'):
         text = '/showlist'
-        handleShowlist(text, chat_id, message_id)
-        sendmessage(chat_id, EDIT_RESPONSE, message_id, force)
+        handleShowlist(text, chat_id, msg_id)
+        sendmessage(chat_id, EDIT_RESPONSE, msg_id, force)
     elif text.startswith('/undoedit'):
         if not os.path.exists(getlistpath(chat_id, BACKUP_LIST_NAME)):
             sendmessage(chat_id, 'Sorry, i dont have a backup. if you didnt edit or used add/remove i wouldnt have one..')
@@ -347,46 +350,12 @@ def handleMessage(chat_id, message):
 
 
 data = readData(GENERAL_DATA)
-last_update = 0
-if LAST_UPDATE_KEY in data:
-    last_update = int(data[LAST_UPDATE_KEY])
 
 if SHOPPING_BOT_TOKEN_KEY not in data:
     print('error: no bot token. cant be a bot without a bot')
     exit(1)
 shopping_bot_token = data[SHOPPING_BOT_TOKEN_KEY].strip()
-bot = telegram.Bot(token=shopping_bot_token)
+bot = telepot.Bot(token=shopping_bot_token)
 
-# like do while
-while True:
-    try:
-        print(last_update)
-        updates = bot.getUpdates(offset=last_update, limit=1)
-    except:
-        last_update += 1
-        exeption_string = traceback.format_exc()
-        print(exeption_string)
-        continue
-    while len(updates) > 0:
-        for update in updates:
-            # finish handeling the update by raising the last update then send message
-            chat_id = update.message.chat_id
-            try:
-                # make sure not to send empty message
-                handleMessage(chat_id, update.message)
-            except:
-                print('error, handeling message failed')
-                print(traceback.format_exc())
-            finally:
-                last_update = max(last_update, update.update_id)
-        last_update += 1
-        try:
-            print(last_update)
-            updates = bot.getUpdates(offset=last_update, limit=1)
-        except:
-            updates = []
-            exeption_string = traceback.format_exc()
-            print(exeption_string)
-            continue
-    time.sleep(1)
+bot.message_loop(handleMessage, run_forever=True)
 
