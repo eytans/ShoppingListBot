@@ -1,0 +1,8 @@
+[Unit]
+Description=Shopping Bot Service
+
+[Service]
+ExecStart=** Edit this and insert a run command **
+
+[Install]
+WantedBy=multi-user.target
